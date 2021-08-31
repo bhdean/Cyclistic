@@ -1,0 +1,169 @@
+---
+title: "Cyclistic Markdown"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### About the company
+In 2016, Cyclistic launched a successful bike-share offering. Since then, the program has grown to a fleet of 5,824 bicycles that
+are geotracked and locked into a network of 692 stations across Chicago. The bikes can be unlocked from one station and
+returned to any other station in the system anytime.
+
+Until now, Cyclistic’s marketing strategy relied on building general awareness and appealing to broad consumer segments.
+One approach that helped make these things possible was the flexibility of its pricing plans: single-ride passes, full-day passes,
+and annual memberships. Customers who purchase single-ride or full-day passes are referred to as casual riders. Customers
+who purchase annual memberships are Cyclistic members.
+
+Cyclistic’s finance analysts have concluded that annual members are much more profitable than casual riders. Although the
+pricing flexibility helps Cyclistic attract more customers, Moreno believes that maximizing the number of annual members will
+be key to future growth. Rather than creating a marketing campaign that targets all-new customers, Moreno believes there is a
+very good chance to convert casual riders into members. She notes that casual riders are already aware of the Cyclistic
+program and have chosen Cyclistic for their mobility needs.
+
+Moreno has set a clear goal: Design marketing strategies aimed at converting casual riders into annual members. In order to
+do that, however, the marketing analyst team needs to better understand how annual members and casual riders differ, why
+casual riders would buy a membership, and how digital media could affect their marketing tactics. Moreno and her team are
+interested in analyzing the Cyclistic historical bike trip data to identify trends.
+
+### About the Data
+Data: July 2020 to June 2021 data in monthly csv files
+
+Data source: <https://divvy-tripdata.s3.amazonaws.com/index.html> 
+While Cyclistic is a fictional company, Divvy is a real company.  Motivate International Inc., operates Divvy bicycle sharing service for the city of Chicago.  The city permits Motivate to make available certain Divvy system data available to the public, through this [License](https://www.divvybikes.com/data-license-agreement)
+
+This is an Reliable, Original, Comprehensive, Current and Cited dataset from a credible Public Government database.
+
+Motivate has scrubbed all private information prior to making the data available to the public as per agreement with the City of Chicago.
+
+Although there are a multitude of N/A expressions, the columns and data shows consistency overall.
+
+### Processing the Data
+
+With a size of 4.4+ million rows and in csv format for the dataset, R was an obivous choice for the processing and analysis steps.  Tydiverse was the only required package.
+
+
+```{r}
+library(tidyverse)
+```
+
+### Import Data
+
+Merged all csv files into one
+
+```{r, include=FALSE}
+setwd("C:/Users/Brent/OneDrive/Documents/Google Capsstone Projecct/Active Data")
+```
+
+```{r}
+csv_files <- list.files(path= "./csv_files/cyclistic",
+                         recursive = TRUE,
+                         full.names = TRUE)
+cyclistic_merged <- do.call(rbind, lapply(csv_files, read.csv))
+as_tibble(cyclistic_merged)
+```
+
+### Clean Data
+
+Removing Duplicates
+
+```{r}
+cyclistic_no_dupes <- cyclistic_merged[!duplicated(cyclistic_merged$trip_id), ]
+print(paste("Removed", nrow(cyclistic_merged) - nrow(cyclistic_no_dupes), "duplicated rows"))
+as_tibble(cyclistic_no_dupes)
+```
+
+Formatting start_time and end_time columns from strings into datetime
+
+```{r}
+cyclistic_no_dupes$start_time <- strptime(as.character(cyclistic_no_dupes$start_time),"%m/%d/%Y %H:%M")
+cyclistic_no_dupes$end_time <- strptime(as.character(cyclistic_no_dupes$end_time),"%m/%d/%Y %H:%M")
+```
+
+Calculating and adding results to a column for the Ride time in minutes
+
+```{r}
+cyclistic_no_dupes <- cyclistic_no_dupes %>%
+  mutate(ride_time_m = as.numeric(cyclistic_no_dupes$end_time - cyclistic_no_dupes$start_time) / 60)
+summary(cyclistic_no_dupes$ride_time_m)
+```
+
+Creating columns for year/month, weekday and start hour, will help with Tableau data vis
+
+```{r}
+cyclistic_no_dupes <- cyclistic_no_dupes %>%
+  mutate(year_month = paste(strftime(cyclistic_no_dupes$start_time, "%Y"),
+  "-",
+  strftime(cyclistic_no_dupes$start_time, "%m"),
+  paste("(",strftime(cyclistic_no_dupes$start_time, "%b"), ")", sep="")))
+unique(cyclistic_no_dupes$year_month)
+
+cyclistic_no_dupes <- cyclistic_no_dupes %>%
+  mutate(weekday = paste(strftime(cyclistic_no_dupes$end_time, "%u"), 
+  "-", 
+  strftime(cyclistic_no_dupes$end_time, "%a")))
+unique(cyclistic_no_dupes$weekday)
+
+cyclistic_no_dupes <- cyclistic_no_dupes %>%
+  mutate(start_hour = strftime(cyclistic_no_dupes$end_time, "%H"))
+unique(cyclistic_no_dupes$start_hour)
+```
+
+```{r}
+cyclistic <- cyclistic_no_dupes
+head(cyclistic)
+```
+
+```{r}
+summary(cyclistic)
+```
+
+Ride time has some obvious outliers, negative time and max time is over 38 days
+
+```{r}
+summary(cyclistic$ride_time_m)
+```
+
+Performing a quantile to the ride times to see the frequency distribution
+
+```{r}
+ventiles = quantile(cyclistic$ride_time_m, seq(0, 1, by=0.05))
+ventiles
+```
+
+90% of the data is between 3 and 69.  Given the disparity for the 1st(-29,050) and 20th(55944) ventiles; this is an acceptable amount 
+
+```{r}
+cyclistic_without_outliers <- cyclistic %>% 
+  filter(ride_time_m > as.numeric(ventiles['5%'])) %>%
+  filter(ride_time_m < as.numeric(ventiles['95%']))
+print(paste("Removed", nrow(cyclistic) - nrow(cyclistic_without_outliers), "rows as outliers" ))
+```
+
+Exporting dataset to be imported into Tableau for data vis
+
+Tableau data vis [Here](https://public.tableau.com/app/profile/brent.dean2941/viz/CyclisticCaseStudy_16298451827720/Cyclistic)
+
+```{r}
+cyclistic_without_outliers %>%
+  write.csv("cyclistic_clean.csv")
+```
+
+Ranking to find which day is the most popular by ride count by each user group
+Ranking to find which day has the most hours ridden by each user group
+
+```{r}
+cyclistic_without_outliers %>% 
+  group_by(usertype, weekday) %>% 
+  summarise(number_of_rides = n()) %>% 
+  mutate(rank_order = min_rank(number_of_rides)) %>%
+  arrange(-rank_order)
+
+cyclistic_without_outliers %>% 
+  group_by(usertype, weekday) %>% 
+  summarise(ride_time_hours = sum(ride_time_m/60)) %>% 
+  mutate(rank_order = min_rank(ride_time_hours)) %>%
+  arrange(-rank_order)
+```
